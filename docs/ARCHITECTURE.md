@@ -126,12 +126,12 @@ sequenceDiagram
   participant D as DB
   B->>A: POST /auth/refresh (cookie si_rt, X-Requested-With, Origin)
   A->>A: CSRF checks (custom header, Origin, Sec-Fetch-Site)
-  A->>D: BEGIN; find token by hash; lock its family (advisory lock); SELECT token FOR UPDATE
+  A->>D: BEGIN, find token by hash, lock its family (advisory lock), SELECT token FOR UPDATE
   alt token already rotated or revoked (replay)
-    A->>D: revoke whole family; audit REFRESH_TOKEN_REUSE_DETECTED
+    A->>D: revoke whole family, audit REFRESH_TOKEN_REUSE_DETECTED
     A-->>B: 401 (all sessions of that family die, incl. the attacker's)
   else valid and family not past absolute lifetime
-    A->>D: insert successor (same family), mark old replaced; COMMIT
+    A->>D: insert successor (same family), mark old replaced, COMMIT
     A-->>B: 200 new access token + rotated cookie
   end
 ```
@@ -147,7 +147,7 @@ sequenceDiagram
   participant D as DB
   B->>A: POST /invoices (Idempotency-Key: uuid) body
   A->>A: validate DTO, calculate totals with decimal.js (HALF_UP to currency minor units)
-  A->>D: BEGIN; set transaction-local lock_timeout
+  A->>D: BEGIN, set transaction-local lock_timeout
   A->>D: INSERT idempotency key ON CONFLICT DO NOTHING
   alt key exists, same request hash
     A-->>B: replay stored 201 (Idempotent-Replayed: true)
@@ -156,7 +156,7 @@ sequenceDiagram
   else new key
     A->>D: INSERT invoice + item (CHECK constraints re-verify totals)
     A->>D: INSERT audit INVOICE_CREATED
-    A->>D: store response on key; COMMIT
+    A->>D: store response on key, COMMIT
     A-->>B: 201 Location /invoices/{id}
   end
 ```
