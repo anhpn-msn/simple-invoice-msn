@@ -1,0 +1,9 @@
+# Opt-in: publish the API on the loopback interface only, for direct API calls and Swagger
+# without nginx (http://localhost:${BACKEND_HOST_PORT}/api/docs).
+#   docker compose -f docker-compose.yml -f docker/compose.api-port.yml up -d
+# Off by default: the API trusts one proxy hop for X-Forwarded-For, so on this port any local
+# caller can choose the client IP that throttling and the audit trail see. Local debugging only.
+services:
+  backend:
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-3000}:3000"

@@ -1,0 +1,7 @@
+# Opt-in: publish Postgres on the loopback interface only, for running the API outside Docker.
+#   docker compose -f docker-compose.yml -f docker/compose.db-port.yml up -d db
+# Off by default so a local Postgres on 5432 never blocks "docker compose up".
+services:
+  db:
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"

@@ -1,0 +1,150 @@
+# Full stack: docker compose up -d --build, then open http://localhost:8080 (nginx is the only way in).
+# Secrets are generated on first run into the "secrets-owner" and "secrets-app" volumes. Nothing
+# secret is stored in this file.
+# Remove the volumes together (docker compose down -v): the owner DB password is only read when
+# Postgres initialises an empty data directory, so "secrets-owner" and "pgdata" must live and die together.
+# Optional overrides: docker/compose.api-port.yml (publish the API), docker/compose.db-port.yml (publish Postgres).
+
+name: simple-invoice
+
+x-api-hardening: &api-hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  secrets-init:
+    image: alpine:3.22
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/init/secrets-init.sh"]
+    volumes:
+      - secrets-owner:/secrets/owner
+      - secrets-app:/secrets/app
+      - ./docker/secrets-init.sh:/init/secrets-init.sh:ro
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      # The image creates this user as SUPERUSER. Only the one-shot migrate service uses it.
+      POSTGRES_USER: simple_invoice
+      POSTGRES_DB: simple_invoice
+      POSTGRES_PASSWORD_FILE: /run/secrets-owner/db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - secrets-owner:/run/secrets-owner:ro
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simple_invoice -d simple_invoice"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # One-shot job with the owner credentials: migrations, runtime role and grants, then the seed
+  # (the seed itself connects as the runtime role). It exits before the backend starts.
+  migrate:
+    build: .
+    image: simple-invoice-api:compose
+    command: ["migrate"]
+    # Not the backend uid: the owner password (group 1001) and the JWT key (owner 1000, 0400)
+    # are then readable by exactly one of the two containers each.
+    user: "1001:1001"
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: simple_invoice
+      DB_NAME: simple_invoice
+      DB_PASSWORD_FILE: /run/secrets-owner/db_password
+      APP_DB_USER: simple_invoice_app
+      APP_DB_PASSWORD_FILE: /run/secrets-app/app_db_password
+      SEED_ON_START: "true"
+      # Public demo credential required by the assessment (README). Override it from the host env or .env.
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-SimpleInvoice-Demo-2026}
+    volumes:
+      - secrets-owner:/run/secrets-owner:ro
+      - secrets-app:/run/secrets-app:ro
+    <<: *api-hardening
+    healthcheck:
+      disable: true
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+
+  backend:
+    build: .
+    image: simple-invoice-api:compose
+    command: ["serve"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: simple_invoice_app
+      DB_NAME: simple_invoice
+      DB_PASSWORD_FILE: /run/secrets-app/app_db_password
+      JWT_SECRET_FILE: /run/secrets-app/jwt_secret
+      COOKIE_SECURE: "true"
+      ALLOWED_ORIGINS: http://localhost:${FRONTEND_HOST_PORT:-8080}
+    # No owner password here: the secrets-owner volume is not mounted.
+    volumes:
+      - secrets-app:/run/secrets-app:ro
+    # No host port: behind nginx the API trusts one proxy hop for X-Forwarded-For, so a direct
+    # port would let a local caller pick its own client IP. Opt in with docker/compose.api-port.yml.
+    <<: *api-hardening
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ${WEB_CONTEXT:-../simple-invoice-web}
+    image: simple-invoice-web:compose
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://backend:3000
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-8080}:8080"
+    read_only: true
+    # nginx-unprivileged writes its pid and temp files to /tmp, and renders the config
+    # template into conf.d at start. Nothing else is writable.
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /etc/nginx/conf.d:size=1m,uid=101,gid=101,mode=0755
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  secrets-owner:
+  secrets-app:
+  pgdata:
