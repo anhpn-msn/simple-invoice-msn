@@ -6,72 +6,24 @@ Backend for the 101 Digital SimpleInvoice assessment: login, invoice list, invoi
 - PostgreSQL 17, Drizzle ORM, SQL migrations
 - Swagger (OpenAPI) at `/api/docs`
 
-The frontend lives in a second repository, [`simple-invoice-web`](../simple-invoice-web). This repository also holds the `docker-compose.yml` that runs the whole stack, because it owns the database.
+The frontend is in [`../frontend`](../frontend) and the `docker-compose.yml` that runs the whole stack is at the repository root. The Docker quick start, URLs, demo accounts, compose options and "start from zero" are in the [root README](../README.md). This file covers the API only.
 
 ## Documents
 
+The documents live in [`../docs/`](../docs), shared by both apps.
+
 | File | What it contains |
 |---|---|
-| [`docs/SPEC.md`](docs/SPEC.md) | The specification: requirements traceability, assumptions, API contract, database, security design. |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Diagrams of the system, the login/refresh flows and exactly-once invoice creation. |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Every library and design choice, compared with the alternatives, in plain English. |
-| [`docs/research/`](docs/research) | The evidence behind the decisions (versions, security, money handling, frontend rules). |
-
-## Quick start (Docker, whole stack)
-
-Requirements: Docker with Compose v2. Clone both repositories side by side:
-
-```
-workspace/
-  simple-invoice-api/   (this repo)
-  simple-invoice-web/
-```
-
-Then:
-
-```bash
-cd simple-invoice-api
-docker compose up --build
-```
-
-No `.env` file and no manual secret step are needed. On the first start a one-shot `secrets-init` container generates random database passwords (one for the schema owner, one for the app) and a JWT secret into two Docker volumes. A one-shot `migrate` container then migrates the schema, creates the least-privilege app role `simple_invoice_app`, and seeds the demo data. The API starts only after that job has finished successfully, and it connects as `simple_invoice_app`, never as the owner.
-
-| What | URL |
-|---|---|
-| Web app | http://localhost:8080 |
-| API (through nginx) | http://localhost:8080/api (for example http://localhost:8080/api/health) |
-| Swagger UI | http://localhost:8080/api/docs |
-
-All ports are bound to `127.0.0.1` only. nginx is the only way in: the API and the database have no host port by default (see "Options" below).
-
-### Demo accounts
-
-| Email | Password | Role | Can do |
-|---|---|---|---|
-| `demo@example.com` | `SimpleInvoice-Demo-2026` | ACCOUNTANT | list, view, create invoices |
-| `auditor@example.com` | `SimpleInvoice-Demo-2026` | AUDITOR | list and view only (create returns `403`) |
-
-This password is a public demo value, required by the brief so a reviewer can log in. It is not a secret. Change it with `SEED_DEMO_PASSWORD=... docker compose up` (at least 15 characters). To change the password of users that already exist, also set `SEED_RESET_PASSWORDS=true` once.
-
-After 5 wrong passwords an account is slowed down (30 s, then doubling up to 15 min). Restarting the stack does not clear it; wait, or run the seed with `SEED_RESET_PASSWORDS=true`.
-
-### Options
-
-| Need | How |
-|---|---|
-| Port 8080 already taken | `FRONTEND_HOST_PORT=8081 docker compose up`. The backend origin check follows `FRONTEND_HOST_PORT` automatically. Open the app via `localhost`, not `127.0.0.1`, because the origin must match. |
-| Call the API directly (no nginx), for example with Postman | `docker compose -f docker-compose.yml -f docker/compose.api-port.yml up` publishes it on `127.0.0.1:3000` (`BACKEND_HOST_PORT` to change); Swagger is then also at http://localhost:3000/api/docs. Local debugging only: on this port the API trusts the `X-Forwarded-For` header, so the client IP used for rate limits and the audit log can be faked. |
-| Connect a SQL client to the database | `docker compose -f docker-compose.yml -f docker/compose.db-port.yml up` publishes it on `127.0.0.1:5432` (`DB_HOST_PORT` to change). Log in as the owner `simple_invoice`; its password is in the owner secrets volume: `docker compose exec db cat /run/secrets-owner/db_password`. The API container cannot read it. |
-| Web repo in another folder | `WEB_CONTEXT=/path/to/simple-invoice-web docker compose up --build` |
-| Start from zero | `docker compose down -v`. This removes the database volume and both secrets volumes together. Always remove the database and owner secrets volumes together: PostgreSQL only reads the owner password when the data folder is first created. The app password is set again on every start, so it can never get out of sync. |
-
-Image tags are pinned (for example `postgres:17-alpine`, `alpine:3.22`), not digests. A production pipeline would pin digests.
+| [`../docs/SPEC.md`](../docs/SPEC.md) | The specification: requirements traceability, assumptions, API contract, database, security design. |
+| [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) | Diagrams of the system, the login/refresh flows and exactly-once invoice creation. |
+| [`../docs/DECISIONS.md`](../docs/DECISIONS.md) | Every library and design choice, compared with the alternatives, in plain English. |
+| [`../docs/research/`](../docs/research) | The evidence behind the decisions (versions, security, money handling, frontend rules). |
 
 ## Running without Docker
 
-Requirements: Node 24 LTS, npm, and a PostgreSQL 17 server.
+Requirements: Node 24 LTS, npm, and a PostgreSQL 17 server. Run the commands in this section from the `backend/` folder.
 
-1. Start PostgreSQL. Any local instance works; the fastest is a throwaway container that matches `.env.example`:
+1. Start PostgreSQL. Any local instance works; the fastest is a throwaway container that matches `backend/.env.example`:
 
    ```bash
    docker run -d --name si-pg -p 127.0.0.1:5432:5432 \
@@ -90,9 +42,9 @@ Requirements: Node 24 LTS, npm, and a PostgreSQL 17 server.
    npm run start:dev
    ```
 
-   The seed uses `SEED_DEMO_PASSWORD` from `.env`. If you keep the placeholder from `.env.example`, that placeholder becomes the demo password.
+   The API reads `backend/.env`. The seed uses `SEED_DEMO_PASSWORD` from that file. If you keep the placeholder from `backend/.env.example`, that placeholder becomes the demo password.
 
-3. Start the web app from `simple-invoice-web` (`npm ci && npm run dev`, see its README) and open http://localhost:5173. Vite proxies `/api` to `http://localhost:3000`.
+3. Start the web app from the `frontend/` folder (`npm ci && npm run dev`, see [its README](../frontend/README.md)) and open http://localhost:5173. Vite proxies `/api` to `http://localhost:3000`.
 
 ## Scripts
 
@@ -133,14 +85,13 @@ Every error has the shape `{ "statusCode": 400, "message": "...", "error": "Bad 
 - **Authorization**: deny-by-default guards, role permissions (ACCOUNTANT, AUDITOR).
 - **Audit**: logins, failures, lockouts, token reuse, logouts, invoice creation and access denials are written to an append-only `audit_events` table.
 - **HTTP**: helmet headers, 16 kB body limit, strict validation (unknown fields rejected), no stack traces in responses, request id on every log line, secrets never logged.
-- **Containers**: non-root users, Linux capabilities dropped (except the postgres image), read-only file system for the API, the migrate job and the nginx frontend, generated secrets with per-file permissions in two volumes (the API never sees the owner password), only the web port published and bound to `127.0.0.1`.
-- **Database role**: the API connects as `simple_invoice_app`, which is not a superuser, owns nothing, and has only SELECT/INSERT (plus UPDATE on users, refresh tokens and idempotency keys). It cannot disable the audit trigger, change or delete audit rows, drop constraints or create tables. Migrations run in a separate one-shot container as the owner.
+- **Containers and database role**: non-root, read-only, capability-dropped containers and a least-privilege database user (`simple_invoice_app`) for the API. See the [root README](../README.md).
 
-Details and the reasons behind each choice: `docs/SPEC.md` section 7 and `docs/DECISIONS.md`.
+Details and the reasons behind each choice: [`../docs/SPEC.md`](../docs/SPEC.md) section 7 and [`../docs/DECISIONS.md`](../docs/DECISIONS.md).
 
 ## Assumptions
 
-The brief leaves some points open. Each choice is listed in `docs/SPEC.md` section 2 with its reason; the main ones:
+The brief leaves some points open. Each choice is listed in [`../docs/SPEC.md`](../docs/SPEC.md) section 2 with its reason; the main ones:
 
 - Discount is an amount in the invoice currency (not a percentage) and cannot be larger than the subtotal.
 - Tax is calculated on the subtotal before the discount, as the brief's formula says.
@@ -153,4 +104,4 @@ The brief leaves some points open. Each choice is listed in `docs/SPEC.md` secti
 
 ## Known limitations
 
-See `docs/SPEC.md` section 14. In short: offset pagination (required by the contract), in-memory rate limits (one instance only), idempotency keys are not purged by a job, and HS256 would move to asymmetric keys if other services had to verify tokens.
+See [`../docs/SPEC.md`](../docs/SPEC.md) section 14. In short: offset pagination (required by the contract), in-memory rate limits (one instance only), idempotency keys are not purged by a job, and HS256 would move to asymmetric keys if other services had to verify tokens.

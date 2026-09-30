@@ -1,6 +1,6 @@
 # SimpleInvoice: Technical Specification
 
-Version 1.0 (2026-09-30). Source requirements: `docs/Assessment_Fullstack_v3.0.0.pdf` (text copy in `docs/assessment.txt`).
+Version 1.0 (2026-09-30). Source requirements: the client's brief `Assessment_Fullstack_v3.0.0.pdf` (not in this repository; text copy in `docs/assessment.txt`).
 
 This document is the single source of truth for the implementation. Where the assessment is ambiguous, the interpretation chosen here is recorded in section 2 and must be followed. If the code and this document disagree, the code is wrong.
 
@@ -54,16 +54,16 @@ Contents
 | R-FE-1 | Responsive, React + TS, unit tests (2.2) | Tailwind responsive layouts | FE tests |
 | R-OPS-1 | docker compose up, Dockerfile per service, ports documented (2.4.2) | `docker-compose.yml` | Manual |
 | R-OPS-2 | `.env` based config, `.env.example`, no hardcoded secrets (2.4.3) | section 10 | Startup validation |
-| R-DOCS-1 | README contents (4.2) | `README.md` | Checklist |
+| R-DOCS-1 | README contents (4.2) | `README.md` (root), `backend/README.md`, `frontend/README.md` | Checklist |
 
 ## 2. Assumptions and interpretations
 
-Every item here is a deliberate decision. Each one is repeated in the README "Assumptions" section.
+Every item here is a deliberate decision. Each one is repeated in the "Assumptions" section of `backend/README.md`.
 
 | ID | Topic | Decision | Rationale |
 |---|---|---|---|
 | A-1 | Discount | `discount` is an absolute amount in the invoice currency, not a percentage. It must satisfy `0 <= discount <= subTotal`. | The formula `totalAmount = subTotal + taxAmount - discount` subtracts it as an amount (Appendix A: 2000 + 200 - 20 = 2180). Capping at `subTotal` (rather than the looser `subTotal + tax`) means a discount can never cancel tax that is owed, and keeps `totalAmount >= taxAmount >= 0`. |
-| A-2 | Tax base | Tax is computed on the full `subTotal` (before discount), exactly as the assessment formula states. | Follow the specification literally; noted in README that many tax regimes apply tax after a pre-tax discount. |
+| A-2 | Tax base | Tax is computed on the full `subTotal` (before discount), exactly as the assessment formula states. | Follow the specification literally; noted in `backend/README.md` that many tax regimes apply tax after a pre-tax discount. |
 | A-3 | Money precision | All money is exact decimal (`NUMERIC` in DB, `decimal.js` in code). Computed amounts are rounded to the currency's ISO 4217 minor units with ROUND_HALF_UP, once, at each step of the formula (subTotal, taxAmount). | Binary floating point cannot represent money. Half-up matches common tax authority guidance (see `docs/research/03-money-and-banking.md`). |
 | A-4 | Money on the wire | Monetary amounts and rates are JSON **strings** with fixed scale (e.g. `"2180.00"`, JPY `"2180"`). Request money fields accept strings matching `^\d{1,15}(\.\d{1,4})?$`. `quantity` stays a JSON integer. | Avoids IEEE-754 precision loss in any client; same approach as ISO 20022 / Google Money style decimal strings. Documented as a deliberate deviation from the numeric style of Appendix A. |
 | A-5 | Currency | Allowlist registry in code: AUD, USD, GBP, EUR, SGD, JPY, VND (extensible). `currencySymbol` is derived by the server from the registry, never accepted from the client. | Prevents inconsistent symbol/code pairs; minor units drive rounding. |
@@ -103,20 +103,22 @@ Every item here is a deliberate decision. Each one is repeated in the README "As
  PostgreSQL 17 (db container, volume)
 ```
 
-Two repositories (the assessment allows "a monorepo or two separate repos"). Clone them side by side:
+One repository (a monorepo; the assessment allows "a monorepo or two separate repos", and the reviewers asked for one). There is no workspace tooling (no npm workspaces, Nx or Turborepo): each app keeps its own `package.json` and `package-lock.json` and runs its own npm scripts from inside its folder. The frontend talks to the backend only over HTTP; nothing imports across the two folders.
 
 ```
-<workspace>/
-  simple-invoice-api/     NestJS API + PostgreSQL migrations/seed + full-stack docker-compose.yml
-    docs/                 SPEC.md (this file), ARCHITECTURE.md, research/
-    docker-compose.yml    starts db + backend + frontend (frontend built from ../simple-invoice-web)
-    .env.example
+simple-invoice/
+  backend/              NestJS API + PostgreSQL migrations/seed, own Dockerfile, .env.example (API settings for local dev)
     README.md
-  simple-invoice-web/     React SPA (Feature-Sliced Design), own Dockerfile + nginx config
+  frontend/             React SPA (Feature-Sliced Design), own Dockerfile + nginx config
     README.md
+  docs/                 SPEC.md (this file), ARCHITECTURE.md, DECISIONS.md, research/, assessment.txt
+  docker/               compose.api-port.yml, compose.db-port.yml, secrets-init.sh
+  docker-compose.yml    starts db + backend + frontend (build contexts ./backend and ./frontend)
+  .env.example          compose-only overrides (SEED_DEMO_PASSWORD, FRONTEND_HOST_PORT, BACKEND_HOST_PORT, DB_HOST_PORT)
+  README.md
 ```
 
-The full-stack `docker-compose.yml` lives in the API repo because it owns the database. The frontend build context is `${WEB_CONTEXT:-../simple-invoice-web}` (overridable, e.g. with a git URL). Wherever this document says `backend/` or `frontend/`, read `simple-invoice-api/` or `simple-invoice-web/`.
+The full-stack `docker-compose.yml` lives at the repository root and is run from there. `backend/` and `frontend/` in this document are the folders of the same names. See D-01 in `DECISIONS.md`.
 
 ### 3.2 Backend module layout
 
@@ -168,7 +170,7 @@ Pin exact versions. Do not float `latest` (TypeScript 7, msw 3, react-router 8 a
 | Logging | nestjs-pino (+ pino 10, pino-http 11) | 5.2.1 | structured logs, redaction |
 | Security | helmet 8, @nestjs/throttler 6, cookie-parser | | |
 | API tests | Jest 30, ts-jest 29, supertest 7, @testcontainers/postgresql 12 | | real Postgres in e2e tests |
-| TypeScript | 5.9.3 (both repos) | | TS 7 breaks swagger and ts-jest |
+| TypeScript | 5.9.3 (both apps) | | TS 7 breaks swagger and ts-jest |
 | SPA | React 19.3, Vite 8.3, @vitejs/plugin-react 6 | | |
 | Routing | react-router 7.18.x (import from `react-router`, `react-router/dom`) | | v8 drops APIs |
 | Server state | @tanstack/react-query 5 | | caching, dedup, retries |
@@ -642,14 +644,14 @@ Keys are scoped per user, retained 24 h (`IDEMPOTENCY_TTL_SECONDS`).
 
 ## 8. Frontend design
 
-Stack: React 19, TypeScript (strict), Vite, React Router (data router), TanStack Query, react-hook-form + zod, Tailwind CSS v4 + shadcn/ui, Vitest + Testing Library + MSW. Architecture: Feature-Sliced Design (see `docs/research/04-frontend-guidelines.md` and `.claude/skills/`).
+Stack: React 19, TypeScript (strict), Vite, React Router (data router), TanStack Query, react-hook-form + zod, Tailwind CSS v4 + shadcn/ui, Vitest + Testing Library + MSW. Architecture: Feature-Sliced Design (see `docs/research/04-frontend-guidelines.md` and the Claude Code skills `feature-sliced-design` and `react-best-practices`).
 
 ### 8.1 FSD layout
 
 Follows the official FSD v2.1 skill: no `widgets/` layer (discouraged in v2.1), no user entity created only for auth.
 
 ```
-simple-invoice-web/src/
+frontend/src/
   app/          providers (QueryClient, Router, Toaster), router + route guards, layouts/app-shell (header, logout), global styles
   pages/        login, invoice-list (incl. its table/cards and filter bar UI), invoice-detail, invoice-create, not-found
   features/     auth-login (form + mutation), auth-logout, invoice-create (form, schema, mutation)
@@ -740,8 +742,8 @@ All configuration comes from environment variables, validated at startup (the pr
 | secrets-init | alpine | none | one-shot, writes secrets into the `secrets-owner` and `secrets-app` volumes on first run only |
 | db | postgres:17-alpine | none by default | named volume, healthcheck `pg_isready`; opt-in `127.0.0.1:5432` via `docker/compose.db-port.yml` |
 | migrate | same image as backend, command `migrate`, uid 1001 | none | one-shot, connects as the schema owner: migrations, then the runtime role and grants (`src/database/runtime-role.ts`), then the optional seed (as the runtime role) |
-| backend | built from `simple-invoice-api/Dockerfile`, command `serve` | none by default; opt-in `127.0.0.1:3000` (`BACKEND_HOST_PORT`) via `docker/compose.api-port.yml` | multi-stage, non-root, code owned by root, read-only root filesystem, connects as `simple_invoice_app`, starts only after `migrate` completed successfully; healthcheck `/health` inside the container |
-| frontend | built from `simple-invoice-web/Dockerfile` | 127.0.0.1:8080 (`FRONTEND_HOST_PORT`) | Vite build served by unprivileged nginx, read-only root filesystem with tmpfs `/tmp` and `/etc/nginx/conf.d`, proxies `/api/` to backend; the only way in |
+| backend | built from `backend/Dockerfile`, command `serve` | none by default; opt-in `127.0.0.1:3000` (`BACKEND_HOST_PORT`) via `docker/compose.api-port.yml` | multi-stage, non-root, code owned by root, read-only root filesystem, connects as `simple_invoice_app`, starts only after `migrate` completed successfully; healthcheck `/health` inside the container |
+| frontend | built from `frontend/Dockerfile` | 127.0.0.1:8080 (`FRONTEND_HOST_PORT`) | Vite build served by unprivileged nginx, read-only root filesystem with tmpfs `/tmp` and `/etc/nginx/conf.d`, proxies `/api/` to backend; the only way in |
 
 `secrets-init`, `migrate`, `backend` and `frontend` drop every Linux capability (`cap_drop: ALL`); `db` keeps the defaults because the postgres entrypoint needs them to initialise its data folder. `ALLOWED_ORIGINS` is derived from `FRONTEND_HOST_PORT`, so changing the port keeps the origin check correct. The API port is not published by default because the API trusts one proxy hop for `X-Forwarded-For` (client IP for throttling and audit); only nginx, which overwrites that header, may reach it. In local dev the Vite proxy sets `X-Forwarded-For` the same way (`xfwd: true`).
 
@@ -756,7 +758,7 @@ The backend never mounts the owner password, and the migrate job (uid 1001) cann
 
 ### 11.3 Running without Docker
 
-Documented in README: start Postgres (any local instance, or `docker compose -f docker-compose.yml -f docker/compose.db-port.yml up db` to publish it on `127.0.0.1:5432`), copy `simple-invoice-api/.env.example` to `simple-invoice-api/.env`, `npm ci && npm run db:migrate && npm run seed && npm run start:dev`; in `simple-invoice-web/`, `npm ci && npm run dev` (Vite proxies `/api` to `http://localhost:3000`).
+Documented in the root README: start Postgres (any local instance, or `docker compose -f docker-compose.yml -f docker/compose.db-port.yml up db` from the repository root to publish it on `127.0.0.1:5432`), then in `backend/` copy `.env.example` to `.env`, `npm ci && npm run db:migrate && npm run seed && npm run start:dev`; in `frontend/`, `npm ci && npm run dev` (Vite proxies `/api` to `http://localhost:3000`).
 
 ### 11.4 Database roles
 
@@ -768,7 +770,7 @@ Documented in README: start Postgres (any local instance, or `docker compose -f 
 - There is no DELETE, and no access to the `drizzle` schema.
 - Because only an owner may `ALTER TABLE ... DISABLE TRIGGER` or drop constraints, the audit append-only trigger and the money CHECK constraints hold even if the API is compromised.
 - `src/database/runtime-role.ts` applies this idempotently on every start (it revokes anything else first). A new table needs a line there.
-- Local dev uses one DB user. To try the split, set `APP_DB_USER` and `APP_DB_PASSWORD` in `.env` and run `npx tsx src/database/runtime-role.ts` after `npm run db:migrate`.
+- Local dev uses one DB user. To try the split, set `APP_DB_USER` and `APP_DB_PASSWORD` in `backend/.env` and, from `backend/`, run `npx tsx src/database/runtime-role.ts` after `npm run db:migrate`.
 
 ## 12. Testing strategy
 

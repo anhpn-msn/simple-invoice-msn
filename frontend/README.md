@@ -8,26 +8,25 @@ Single Page App for the 101 Digital SimpleInvoice assessment: login, invoice lis
 - Tailwind CSS 4 + shadcn/ui components
 - Vitest, Testing Library and MSW for tests
 
-The backend and the `docker-compose.yml` for the whole stack live in [`simple-invoice-api`](../simple-invoice-api). The specification, architecture and decision log are in that repository's `docs/` folder.
+This app is one half of the SimpleInvoice monorepo. The backend is in [`../backend`](../backend), the `docker-compose.yml` for the whole stack is at the repository root, and the specification, architecture and decision log are in [`../docs/`](../docs). See the [root README](../README.md) for the project structure.
 
 ## Quick start
 
 ### Whole stack with Docker (recommended)
 
-Clone both repositories side by side, then run compose from the API repository:
+Run compose from the repository root:
 
 ```bash
-cd simple-invoice-api
-docker compose up --build
+docker compose up -d --build
 ```
 
-Open http://localhost:8080 and log in with `demo@example.com` / `SimpleInvoice-Demo-2026` (ACCOUNTANT, can create invoices) or `auditor@example.com` / `SimpleInvoice-Demo-2026` (AUDITOR, read only). These are public demo credentials required by the brief. See the API README for ports and options.
+Open http://localhost:8080 and log in with `demo@example.com` / `SimpleInvoice-Demo-2026` (ACCOUNTANT, can create invoices) or `auditor@example.com` / `SimpleInvoice-Demo-2026` (AUDITOR, read only). These are public demo credentials required by the brief. See the [root README](../README.md) for ports and options.
 
 In Docker the app is built once and served by an unprivileged nginx, which also proxies `/api/*` to the backend, so the browser talks to one origin only.
 
 ### Development server
 
-Requirements: Node 24 LTS and the API running on http://localhost:3000 (see the API README, "Running without Docker").
+Requirements: Node 24 LTS and the API running on http://localhost:3000 (see [`../backend/README.md`](../backend/README.md), "Running without Docker"). Run the commands below from the `frontend/` folder.
 
 ```bash
 npm ci
@@ -80,7 +79,7 @@ Imports only go down the layers (`app > pages > features > entities > shared`). 
 - **CSRF**: refresh and logout send `X-Requested-With: SimpleInvoice`; the server also checks `Origin` and `Sec-Fetch-Site`.
 - **Headers** (nginx): strict Content Security Policy (no inline scripts), `X-Frame-Options: DENY`, `nosniff`, `no-referrer`.
 
-Details: `simple-invoice-api/docs/SPEC.md` sections 7 and 8, and `docs/DECISIONS.md`.
+Details: [`../docs/SPEC.md`](../docs/SPEC.md) sections 7 and 8, and [`../docs/DECISIONS.md`](../docs/DECISIONS.md).
 
 ## Known limitations
 

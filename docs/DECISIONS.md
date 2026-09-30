@@ -22,16 +22,17 @@ Contents:
 
 ## 1. Project shape
 
-### D-01 Two repositories instead of one monorepo
+### D-01 One monorepo without workspace tooling
 
-A monorepo is one repository that holds several projects together.
+A monorepo is one repository that holds several projects together. Workspace tooling (npm workspaces, Nx, Turborepo) is extra software that manages the projects of a monorepo as one unit: it shares one set of installed packages and one lockfile (the file that records the exact version of every package).
 
 | Option | Good | Bad |
 |---|---|---|
-| **Two repos: `simple-invoice-api` + `simple-invoice-web` (chosen)** | Each part has its own history, CI (automatic build and test) and owner, which is how a bank usually splits backend and frontend teams. Clear boundary: the frontend can only use the public API. | You must clone two folders. The full-stack `docker-compose.yml` has to live in one of them. |
-| One monorepo | One clone. One place for shared tools. | Needs workspace tooling (npm workspaces, Nx, Turborepo), which adds setup the reviewer must understand. Frontend code can easily import backend code by accident. |
+| Two repos: `simple-invoice-api` + `simple-invoice-web` | Each part has its own history, CI (automatic build and test) and owner, which is how a bank usually splits backend and frontend teams. Clear boundary: the frontend can only use the public API. | The reviewer must clone two folders. The full-stack `docker-compose.yml` has to live in one of them and reach the other with a path outside its own repo. |
+| Monorepo with workspace tooling (npm workspaces, Nx or Turborepo) | One clone. One place for shared tools and scripts. | It merges the lockfiles and changes how dependencies are installed, so the exact versions we tested would move. It adds setup the reviewer must understand. Frontend code can easily import backend code by accident. |
+| **Plain monorepo: `backend/` + `frontend/` + `docs/` + compose at the root, no workspace tooling (chosen)** | One clone and one `docker compose up` from the root. Each app keeps its own `package.json` and lockfile, so installs work exactly as they were tested. The folders stay independent. | No shared tooling between the apps. Each npm command must run from inside its own folder. |
 
-**Why:** The brief allows both. Two repos give a clean security boundary and match how the client's teams are likely organised. The full-stack `docker-compose.yml` lives in the API repo, because the API owns the database. It builds the web app from `../simple-invoice-web`, so one command still starts everything.
+**Why:** The reviewers asked for one repository, and the brief allows a monorepo. The project first used two repos, because that gives a clean boundary and matches how a bank often splits teams. It changed because a reviewer had to clone two folders and put them side by side, and the compose file reached the other repo by a relative path (`../simple-invoice-web`, or `WEB_CONTEXT`). Now `docker compose up -d --build` works from one clone. We did not add workspace tooling: it would merge the lockfiles and change how dependencies install, while each app keeps the lockfile we already tested. The frontend still talks to the backend only over HTTP, and nothing imports across `backend/` and `frontend/`, so the security boundary is the same as with two repos.
 
 ### D-02 Spec first, then code
 
@@ -589,19 +590,19 @@ Each tab keeps its access token in its own memory, but all tabs share one refres
 
 ### D-57 Where types and constants live
 
-| Repo | Types | Constants |
+| App | Types | Constants |
 |---|---|---|
-| API | `<module>.types.ts` (for example `auth/auth.types.ts`) | `<module>.constants.ts` |
-| Web | `model/types.ts` in each slice, `types.ts` in each `shared` segment | `model/constants.ts` in the slice, or `shared/config` when many layers need it |
+| Backend | `<module>.types.ts` (for example `auth/auth.types.ts`) | `<module>.constants.ts` |
+| Frontend | `model/types.ts` in each slice, `types.ts` in each `shared` segment | `model/constants.ts` in the slice, or `shared/config` when many layers need it |
 
-Two exceptions, in both repos:
+Two exceptions, in both apps:
 
 - A type made from a constant or a schema (for example `type InvoiceStatus = (typeof INVOICE_STATUSES)[number]`) stays next to that constant. They must always change together, so they sit together.
 - React `Props` types stay in the component file (normal React style; only that component uses them).
 
 | Option | Good | Bad |
 |---|---|---|
-| **Separate types and constants files (chosen)** | Easy to find. No magic numbers or repeated header names (a typo in one copy would be a silent bug). Values that the client and server must share (field limits, header names) have one home per repo. | More small files. |
+| **Separate types and constants files (chosen)** | Easy to find. No magic numbers or repeated header names (a typo in one copy would be a silent bug). Values that the client and server must share (field limits, header names) have one home per app. | More small files. |
 | Types and values next to the code that uses them | Fewer files. | The same value gets copied into several files and drifts apart (this happened before the cleanup: two copies of the SHA-256 helper and of the date check). |
 
 A related choice: the API sets the insert lock wait with `set_config('lock_timeout', $1, true)` instead of `SET LOCAL lock_timeout = '5s'`. Both do the same thing for the current transaction, but only the first takes the value as a bound parameter, so the constant is never pasted into SQL text.
@@ -647,12 +648,12 @@ The lock uses the two-key form `pg_advisory_xact_lock(1, hashtext(family_id))`. 
 
 ### D-61 Static analysis pass (SonarQube) and install scripts
 
-We ran SonarQube (a tool that reads the code and reports bugs, risky code and style problems) on both repos and fixed most findings. Two changes affect the build:
+We ran SonarQube (a tool that reads the code and reports bugs, risky code and style problems) on both apps and fixed most findings. Two changes affect the build:
 
 | Change | Why, and what we did not pick |
 |---|---|
 | `npm ci --ignore-scripts` in both Dockerfiles | Install scripts (small programs a package runs while it is installed) are a common supply chain attack path (an attack through a dependency). No package in the images needs one: the only production package with a script, `@scarf/scarf`, only sends install statistics. esbuild, Rollup and Tailwind ship their native binaries as normal packages. |
-| The web Dockerfile copies only the files the build needs, not `COPY . .` | A wide copy can put local files (for example an `.env`) into the image if `.dockerignore` misses them. A short list of files is easier to check. |
+| The frontend Dockerfile copies only the files the build needs, not `COPY . .` | A wide copy can put local files (for example an `.env`) into the image if `.dockerignore` misses them. A short list of files is easier to check. |
 
 Findings we kept on purpose:
 
@@ -680,3 +681,4 @@ For canonical JSON (the stable form of a request body that we hash for idempoten
 | 2026-09-30 | Added D-57: where types and constants live (after the cleanup tasks T15 and T16). |
 | 2026-09-30 | Added D-58 to D-60 after the security review (T12): least-privilege database user and migrate job, one lock per login session for refresh and logout, and the smaller fixes (rate limit by handler, reduced error logs, example secrets refused in production, authorization fails closed, query time limit). |
 | 2026-09-30 | Added D-61: SonarQube pass, install scripts turned off in Docker builds, findings kept on purpose. |
+| 2026-09-30 | Moved to one monorepo (D-01): backend/, frontend/, docs/ and compose at the root. |

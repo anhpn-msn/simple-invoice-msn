@@ -1,17 +1,17 @@
 # SimpleInvoice Web
 
-React 19 + Vite SPA for the 101 Digital SimpleInvoice assessment, organised with Feature-Sliced Design v2.1. The client has a core banking and digital wallet background; security is judged hardest. The API, the full-stack `docker-compose.yml` and the normative docs (`docs/SPEC.md`, `docs/DECISIONS.md`) live in the sibling repo `simple-invoice-api`.
+React 19 + Vite SPA for the 101 Digital SimpleInvoice assessment, organised with Feature-Sliced Design v2.1. The client has a core banking and digital wallet background; security is judged hardest. It lives in the `frontend/` folder of the SimpleInvoice monorepo. The API is in `../backend`, and the full-stack `docker-compose.yml` and the normative docs (`../docs/SPEC.md`, `../docs/DECISIONS.md`) are at the repository root. Run npm scripts from inside `frontend/`; there are no npm workspaces.
 
 ## Source of truth
 
-`simple-invoice-api/docs/SPEC.md` is normative (section 8 for the frontend, 4.5 for validation rules, 6 for the API contract). If the spec is wrong or silent, stop and report instead of improvising. Record new libraries or non-trivial design choices in `simple-invoice-api/docs/DECISIONS.md`, in simple English (B1/B2).
+`../docs/SPEC.md` is normative (section 8 for the frontend, 4.5 for validation rules, 6 for the API contract). If the spec is wrong or silent, stop and report instead of improvising. Record new libraries or non-trivial design choices in `../docs/DECISIONS.md`, in simple English (B1/B2).
 
 ## Toolchain
 
 - Node 24 LTS: `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null` before npm commands.
 - Pin exact versions. Do not add, remove or upgrade dependencies without being asked (TypeScript 7, msw 3 and react-router 8 break this stack).
 
-## Non-negotiable rules (both repos)
+## Non-negotiable rules (both apps)
 
 - Money is never a JS `number`. Backend: `decimal.js` via the domain `money` helpers. Frontend: decimal strings, formatted with `Intl.NumberFormat` from the string, never `parseFloat` for arithmetic. The frontend never calculates invoice totals.
 - No secrets, passwords, or tokens in code, tests fixtures committed as real values, or logs. Everything configurable comes from env (SPEC section 10).

@@ -1,21 +1,21 @@
 # SimpleInvoice API
 
-NestJS 11 + PostgreSQL 17 + Drizzle backend for the 101 Digital SimpleInvoice assessment. The client has a core banking and digital wallet background; security is judged hardest. The SPA lives in the sibling repo `simple-invoice-web`.
+NestJS 11 + PostgreSQL 17 + Drizzle backend for the 101 Digital SimpleInvoice assessment. The client has a core banking and digital wallet background; security is judged hardest. It lives in the `backend/` folder of the SimpleInvoice monorepo. The SPA is in `../frontend`, and the full-stack `docker-compose.yml` and the docs are at the repository root. Run npm scripts from inside `backend/`; there are no npm workspaces.
 
 ## Source of truth
 
-1. `docs/SPEC.md` is normative. Read the relevant sections before writing code. If the spec is wrong or silent, stop and report instead of improvising.
-2. `docs/assessment.txt` is the client's original brief.
-3. `docs/DECISIONS.md` lists every library and design choice with alternatives and reasons. Add an entry for any new library or non-trivial design choice, in simple English (B1/B2), explaining harder words in parentheses.
-4. `docs/research/*.md` holds the evidence behind decisions.
+1. `../docs/SPEC.md` is normative. Read the relevant sections before writing code. If the spec is wrong or silent, stop and report instead of improvising.
+2. `../docs/assessment.txt` is the client's original brief.
+3. `../docs/DECISIONS.md` lists every library and design choice with alternatives and reasons. Add an entry for any new library or non-trivial design choice, in simple English (B1/B2), explaining harder words in parentheses.
+4. `../docs/research/*.md` holds the evidence behind decisions.
 
 ## Toolchain
 
 - Node 24 LTS: `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null` before npm commands.
 - Pin exact versions (SPEC section 3.4). Do not add, remove or upgrade dependencies without being asked.
-- Docker is required for `npm run test:e2e` (Testcontainers) and `docker compose up`.
+- Docker is required for `npm run test:e2e` (Testcontainers) and `docker compose up` (run from the repository root).
 
-## Non-negotiable rules (both repos)
+## Non-negotiable rules (both apps)
 
 - Money is never a JS `number`. Backend: `decimal.js` via the domain `money` helpers. Frontend: decimal strings, formatted with `Intl.NumberFormat` from the string, never `parseFloat` for arithmetic. The frontend never calculates invoice totals.
 - No secrets, passwords, or tokens in code, tests fixtures committed as real values, or logs. Everything configurable comes from env (SPEC section 10).
